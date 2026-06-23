@@ -53,7 +53,7 @@ const DOCS = "https://juliaregistries.github.io/Registrator.jl/stable/webui/#Usa
 const CONFIG = Dict{String, Any}()
 
 include("../management.jl")
-const httpsock = Ref{Sockets.TCPServer}()
+const httpsock = Ref{Any}()
 
 include("providers.jl")
 
@@ -230,12 +230,11 @@ end
 function request_processor(zsock::RequestSocket)
     do_action() = action(take!(event_queue), zsock)
     handle_exception(ex) = ex isa InvalidStateException && ex.state === :closed ? :exit : :continue
-    keep_running() = isopen(httpsock[])
+    keep_running() = !isassigned(httpsock) || isopen(httpsock[])
     recover("request_processor", keep_running, do_action, handle_exception)
 end
 
 function start_server(ip::IPAddr, port::Int)
-    httpsock[] = Sockets.listen(ip, port)
     @app server = (
         error_handler,
         pathmatch(ROUTES[:INDEX], index),
@@ -247,9 +246,15 @@ function start_server(ip::IPAddr, port::Int)
         firstmatch(ROUTES[:BITBUCKET], bitbucket),
         r -> html(404, "Page not found"),
     )
-    do_action() = wait(serve(server, ip, port; server=httpsock[], readtimeout=0))
+    function do_action()
+        s = serve(server, ip, port; readtimeout=0)
+        if s !== nothing
+            httpsock[] = s
+            wait(s)
+        end
+    end
     handle_exception(ex) = ex isa Base.IOError && ex.code == -103 ? :exit : :continue
-    keep_running() = isopen(httpsock[])
+    keep_running() = !isassigned(httpsock) || isopen(httpsock[])
     recover("webui", keep_running, do_action, handle_exception)
 end
 

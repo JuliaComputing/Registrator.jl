@@ -34,7 +34,7 @@ end
 function status_monitor(
     stop_file::AbstractString,
     event_queue::Channel,
-    httpsock::Ref{Sockets.TCPServer},
+    httpsock::Ref,
 )
     status_monitor(stop_file, () -> isopen(event_queue)) do
         # wait for queued requests to be processed and close queue
