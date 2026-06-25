@@ -8,7 +8,6 @@ using GitForge, GitForge.GitHub, GitForge.GitLab, GitForge.Bitbucket
 using Base64
 using HTTP
 using JSON
-using Mux
 using Pkg, Pkg.TOML
 using Sockets
 using TimeToLive
@@ -161,21 +160,16 @@ function init_registry()
     )
 end
 
-for f in [:index, :auth, :callback, :select, :register]
-    @eval $f(func::Function, r::HTTP.Request) = func($f(r))
+function error_handler(handler)
+    return function(r::HTTP.Request)
+        try
+            handler(r)
+        catch e
+            @error "Handler error" route=r.target exception=(e, catch_backtrace())
+            html(500, "Server error, sorry!")
+        end
+    end
 end
-
-error_handler(f::Function, r::HTTP.Request) = try
-    f(r)
-catch e
-    @error "Handler error" route=r.target exception=(e, catch_backtrace())
-    html(500, "Server error, sorry!")
-end
-
-const SLASH_PAT = r"^/([^/]*)([/?].*|)$"
-
-pathmatch(p::AbstractString, f::Function) = branch(r -> first(split(r.target, "?")) == p, f)
-firstmatch(p::AbstractString, f::Function) = branch(r -> something(match(SLASH_PAT, r.target), [""])[1] == p[2:end], f)
 
 function action(regdata::RegistrationData, zsock::RequestSocket)
     regp = RegisterParams(
@@ -235,23 +229,19 @@ function request_processor(zsock::RequestSocket)
 end
 
 function start_server(ip::IPAddr, port::Int)
-    @app server = (
-        error_handler,
-        pathmatch(ROUTES[:INDEX], index),
-        pathmatch(ROUTES[:AUTH], auth),
-        pathmatch(ROUTES[:CALLBACK], callback),
-        pathmatch(ROUTES[:SELECT], select),
-        pathmatch(ROUTES[:REGISTER], register),
-        pathmatch(ROUTES[:STATUS], status),
-        firstmatch(ROUTES[:BITBUCKET], bitbucket),
-        r -> html(404, "Page not found"),
-    )
+    router = HTTP.Router(r -> html(404, "Page not found"))
+    HTTP.register!(router, ROUTES[:INDEX], index)
+    HTTP.register!(router, ROUTES[:AUTH], auth)
+    HTTP.register!(router, ROUTES[:CALLBACK], callback)
+    HTTP.register!(router, ROUTES[:SELECT], select)
+    HTTP.register!(router, ROUTES[:REGISTER], register)
+    HTTP.register!(router, ROUTES[:STATUS], status)
+    HTTP.register!(router, ROUTES[:BITBUCKET], bitbucket)
+    HTTP.register!(router, ROUTES[:BITBUCKET] * "/{*}", bitbucket)
     function do_action()
-        s = serve(server, ip, port; readtimeout=0)
-        if s !== nothing
-            httpsock[] = s
-            wait(s)
-        end
+        s = HTTP.serve!(error_handler(router), string(ip), port)
+        httpsock[] = s
+        wait(s)
     end
     handle_exception(ex) = ex isa Base.IOError && ex.code == -103 ? :exit : :continue
     keep_running() = !isassigned(httpsock) || isopen(httpsock[])
