@@ -33,7 +33,7 @@ Base64 = "1"
 Dates = "1"
 Distributed = "1"
 FileWatching = "1"
-GitForge = "0.4"
+GitForge = "0.4.5"
 GitHub = "5.13"
 HTTP = "1, 2"
 JSON = "0.20, 0.21"
@@ -51,9 +51,6 @@ URIs = "1.6" # Must be >= 1.6, see https://github.com/JuliaRegistries/Registrato
 UUIDs = "1"
 ZMQ = "1"
 julia = "1.1"
-
-[sources]
-GitForge = { rev = "http2-compat", url = "git@github.com:JuliaComputing/GitForge.jl.git"}
 
 [extras]
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
