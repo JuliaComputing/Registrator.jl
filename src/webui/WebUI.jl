@@ -171,6 +171,18 @@ function error_handler(handler)
     end
 end
 
+# HTTP.jl v1 routes via URI(req.target).path, which parses "//foo" as an
+# authority-relative reference (host="foo", path=""), causing it to match the
+# "/" route instead of the 404 fallback. Normalize such targets up-front.
+function normalize_path(handler)
+    return function(r::HTTP.Request)
+        if startswith(r.target, "//")
+            r.target = "/" * lstrip(r.target, '/')
+        end
+        handler(r)
+    end
+end
+
 function action(regdata::RegistrationData, zsock::RequestSocket)
     regp = RegisterParams(
         cloneurl(regdata.repo, regdata.is_ssh),
@@ -239,7 +251,7 @@ function start_server(ip::IPAddr, port::Int)
     HTTP.register!(router, ROUTES[:BITBUCKET], bitbucket)
     HTTP.register!(router, ROUTES[:BITBUCKET] * "/{*}", bitbucket)
     function do_action()
-        s = HTTP.serve!(error_handler(router), string(ip), port)
+        s = HTTP.serve!(normalize_path(error_handler(router)), string(ip), port)
         httpsock[] = s
         wait(s)
     end
