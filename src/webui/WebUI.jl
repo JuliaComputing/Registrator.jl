@@ -52,7 +52,7 @@ const DOCS = "https://juliaregistries.github.io/Registrator.jl/stable/webui/#Usa
 const CONFIG = Dict{String, Any}()
 
 include("../management.jl")
-const httpsock = Ref{Any}()
+const httpserver = Ref{HTTP.Server}()
 
 include("providers.jl")
 
@@ -236,7 +236,7 @@ end
 function request_processor(zsock::RequestSocket)
     do_action() = action(take!(event_queue), zsock)
     handle_exception(ex) = ex isa InvalidStateException && ex.state === :closed ? :exit : :continue
-    keep_running() = !isassigned(httpsock) || isopen(httpsock[])
+    keep_running() = !isassigned(httpserver) || isopen(httpserver[])
     recover("request_processor", keep_running, do_action, handle_exception)
 end
 
@@ -252,11 +252,11 @@ function start_server(ip::IPAddr, port::Int)
     HTTP.register!(router, ROUTES[:BITBUCKET] * "/{*}", bitbucket)
     function do_action()
         s = HTTP.serve!(normalize_path(error_handler(router)), string(ip), port)
-        httpsock[] = s
+        httpserver[] = s
         wait(s)
     end
     handle_exception(ex) = ex isa Base.IOError && ex.code == -103 ? :exit : :continue
-    keep_running() = !isassigned(httpsock) || isopen(httpsock[])
+    keep_running() = !isassigned(httpserver) || isopen(httpserver[])
     recover("webui", keep_running, do_action, handle_exception)
 end
 
@@ -280,7 +280,7 @@ function main(config::AbstractString=isempty(ARGS) ? "config.toml" : first(ARGS)
     port = CONFIG["port"]
 
     @info "Starting WebUI" ip port
-    monitor = @async status_monitor(CONFIG["stop_file"], event_queue, httpsock)
+    monitor = @async status_monitor(CONFIG["stop_file"], event_queue, httpserver)
     reqproc = @async request_processor(zsock)
     start_server(ip, port)
     wait(reqproc)
